@@ -1,0 +1,18 @@
+{
+  "name": "com.oxitorenk.editortabs",
+  "version": "1.0.0",
+  "displayName": "Editor Tabs",
+  "description": "A productivity extension for the Unity Editor that provides a browser-like, tabbed interface to manage your workspace by pinning folders, assets, GameObjects, and components.",
+  "unity": "6000.0",
+  "author": {
+    "name": "Oxitorenk"
+  },
+  "keywords": [
+    "editor",
+    "tabs",
+    "productivity",
+    "workflow",
+    "ui"
+  ],
+  "dependencies": {}
+}
