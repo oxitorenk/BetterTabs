@@ -4,7 +4,7 @@ using UnityEngine.UIElements;
 using UnityEditor.UIElements;
 using System.Collections.Generic;
 
-namespace EditorTabs.Editor
+namespace BetterTabs.Editor
 {
     public class FolderTreeItem
     {
@@ -16,13 +16,13 @@ namespace EditorTabs.Editor
     /// <summary>
     /// The actual custom tab window representing pinned assets, objects, or folders.
     /// </summary>
-    public class EditorTabsWindow : EditorWindow, IHasCustomMenu
+    public class BetterTabsWindow : EditorWindow, IHasCustomMenu
     {
         [SerializeField]
         private string windowID;
-        
-        private TabInfo _tabInfo;
-        private Object _target;
+
+        private BetterTabTargetReference _targetReference;
+        private Object _targetObject;
         private Vector2 _inspectorScrollPosition;
         private int _currentTreeID;
         private TreeView _treeView;
@@ -33,11 +33,11 @@ namespace EditorTabs.Editor
         public void Initialize(string windowId)
         {
             windowID = windowId;
-            _tabInfo = TabStateRegistry.Instance.GetTabInfo(windowID);
+            _targetReference = BetterTabStateRegistry.Instance.GetTabTargetReference(windowID);
             
-            if (_tabInfo != null)
+            if (_targetReference != null)
             {
-                _target = _tabInfo.ResolveTarget();
+                _targetObject = _targetReference.ResolveTarget();
             }
             
             RenderUI();
@@ -47,10 +47,10 @@ namespace EditorTabs.Editor
         {
             if (string.IsNullOrEmpty(windowID)) return;
 
-            _tabInfo = TabStateRegistry.Instance.GetTabInfo(windowID);
-            if (_tabInfo != null)
+            _targetReference = BetterTabStateRegistry.Instance.GetTabTargetReference(windowID);
+            if (_targetReference != null)
             {
-                _target = _tabInfo.ResolveTarget();
+                _targetObject = _targetReference.ResolveTarget();
             }
 
             RenderUI();
@@ -60,7 +60,7 @@ namespace EditorTabs.Editor
         {
             if (!string.IsNullOrEmpty(windowID))
             {
-                TabStateRegistry.Instance.UnregisterTab(windowID);
+                BetterTabStateRegistry.Instance.UnregisterTab(windowID);
             }
 
             ClearEditors();
@@ -89,7 +89,7 @@ namespace EditorTabs.Editor
             var toolbar = new Toolbar();
             rootVisualElement.Add(toolbar);
 
-            if (_target == null || _tabInfo == null)
+            if (_targetObject == null || _targetReference == null)
             {
                 RenderMissingTarget(toolbar);
                 return;
@@ -97,19 +97,19 @@ namespace EditorTabs.Editor
 
             // Sync Window Title Native Appearance
             Texture icon;
-            if (_target is Component comp)
+            if (_targetObject is Component comp)
             {
                 icon = EditorGUIUtility.ObjectContent(comp.gameObject, typeof(GameObject)).image; // Fallback or retrieve actual component icon
             }
             else
             {
-                icon = EditorGUIUtility.ObjectContent(_target, _target.GetType()).image;
+                icon = EditorGUIUtility.ObjectContent(_targetObject, _targetObject.GetType()).image;
             }
 
-            titleContent = new GUIContent(_target.name, icon);
+            titleContent = new GUIContent(_targetObject.name, icon);
 
             // Populate Toolbar 
-            var showButton = new ToolbarButton(() => EditorGUIUtility.PingObject(_target)) { text = "Show" };
+            var showButton = new ToolbarButton(() => EditorGUIUtility.PingObject(_targetObject)) { text = "Show" };
             var refreshButton = new ToolbarButton(RenderUI) { text = "Refresh" };
             
             toolbar.Add(showButton);
@@ -117,7 +117,7 @@ namespace EditorTabs.Editor
             toolbar.Add(new ToolbarSpacer() { flex = true });
 
             // Render Polymorphic Content
-            if (_tabInfo.targetType == TabTargetType.Folder)
+            if (_targetReference.targetType == BetterTabTargetType.Folder)
             {
                 RenderFolderView(rootVisualElement);
             }
@@ -148,18 +148,18 @@ namespace EditorTabs.Editor
 
         private void RenderInspectorView(VisualElement container)
         {
-            if (_target == null) return;
+            if (_targetObject == null) return;
 
             ClearEditors();
 
             var imGuiContainer = new IMGUIContainer(() =>
             {
                 // Safety check if the target was destroyed entirely
-                if (_target == null) return;
+                if (_targetObject == null) return;
 
                 _inspectorScrollPosition = EditorGUILayout.BeginScrollView(_inspectorScrollPosition);
 
-                if (_target is GameObject targetGameObject)
+                if (_targetObject is GameObject targetGameObject)
                 {
                     // Initialize editors if the cache is empty
                     if (_cachedEditors.Count == 0)
@@ -208,7 +208,7 @@ namespace EditorTabs.Editor
                     // For standard assets (Materials, Scripts, etc.), we just draw the single editor.
                     if (_cachedEditors.Count == 0)
                     {
-                        _cachedEditors.Add(UnityEditor.Editor.CreateEditor(_target));
+                        _cachedEditors.Add(UnityEditor.Editor.CreateEditor(_targetObject));
                     }
 
                     if (_cachedEditors[0] != null)
@@ -227,7 +227,7 @@ namespace EditorTabs.Editor
 
         private void RenderFolderView(VisualElement container)
         {
-            var folderAssetPath = AssetDatabase.GetAssetPath(_target);
+            var folderAssetPath = AssetDatabase.GetAssetPath(_targetObject);
 
             _currentTreeID = 0;
             var roots = BuildTreeChildren(folderAssetPath);
@@ -248,7 +248,7 @@ namespace EditorTabs.Editor
                 {
                     flexGrow = 1
                 },
-                viewDataKey = "EditorTabs-Tree-" + windowID, // Persists expansion states across domain reloads
+                viewDataKey = "BetterTabs-Tree-" + windowID, // Persists expansion states across domain reloads
                 makeItem = () =>
                 {
                     var row = new VisualElement

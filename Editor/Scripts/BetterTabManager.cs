@@ -4,10 +4,10 @@ using System;
 using System.Reflection;
 using UnityEngine.UIElements;
 
-namespace EditorTabs.Editor
+namespace BetterTabs.Editor
 {
     [InitializeOnLoad]
-    public static class TabManager
+    public static class BetterTabManager
     {
         private static Type _dockAreaType;
         private static PropertyInfo _screenPosProp;
@@ -16,7 +16,7 @@ namespace EditorTabs.Editor
         
         private const float MouseYThreshold = 35f;
 
-        static TabManager()
+        static BetterTabManager()
         {
             InitializeReflection();
             HookGlobalEvent();
@@ -35,12 +35,12 @@ namespace EditorTabs.Editor
                 _addTabMethod = _dockAreaType.GetMethod("AddTab", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(EditorWindow), typeof(bool) }, null)
                               ?? _dockAreaType.GetMethod("AddTab", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(EditorWindow) }, null);
 
-                if (_screenPosProp == null) Debug.LogError("[EditorTabs] Failed to find DockArea position property.");
-                if (_addTabMethod == null) Debug.LogError("[EditorTabs] Failed to find DockArea AddTab method.");
+                if (_screenPosProp == null) Debug.LogError("[BetterTabs] Failed to find DockArea position property.");
+                if (_addTabMethod == null) Debug.LogError("[BetterTabs] Failed to find DockArea AddTab method.");
             }
             else
             {
-                Debug.LogError("[EditorTabs] Failed to find DockArea type.");
+                Debug.LogError("[BetterTabs] Failed to find DockArea type.");
             }
         }
 
@@ -99,7 +99,7 @@ namespace EditorTabs.Editor
             
             var targetObject = DragAndDrop.objectReferences[0];
             var targetType = IdentifyType(targetObject);
-            if (targetType == TabTargetType.None) return;
+            if (targetType == BetterTabTargetType.None) return;
 
             if (dragUpdateEvent.currentTarget is not VisualElement) return;
             if (dragUpdateEvent.localMousePosition.y >= MouseYThreshold) return;
@@ -115,7 +115,7 @@ namespace EditorTabs.Editor
             
             var targetObject = DragAndDrop.objectReferences[0];
             var targetType = IdentifyType(targetObject);
-            if (targetType == TabTargetType.None) return;
+            if (targetType == BetterTabTargetType.None) return;
 
             var targetElement = dragPerformEvent.currentTarget as VisualElement;
             var dockArea = GetDockAreaFromVisualElement(targetElement);
@@ -148,14 +148,14 @@ namespace EditorTabs.Editor
             return null;
         }
 
-        private static void PerformDrop(object dockArea, UnityEngine.Object targetObject, TabTargetType targetType)
+        private static void PerformDrop(object dockArea, UnityEngine.Object targetObject, BetterTabTargetType targetType)
         {
             var windowId = Guid.NewGuid().ToString();
 
             // Register in the persistent singleton BEFORE creating the instance so OnEnable can find it
-            TabStateRegistry.Instance.RegisterTab(windowId, targetObject, targetType);
-            
-            var window = ScriptableObject.CreateInstance<EditorTabsWindow>();
+            BetterTabStateRegistry.Instance.RegisterTab(windowId, targetObject, targetType);
+
+            var window = ScriptableObject.CreateInstance<BetterTabsWindow>();
             window.Initialize(windowId);
             if (_addTabMethod != null && dockArea != null)
             {
@@ -177,29 +177,29 @@ namespace EditorTabs.Editor
             window.Focus();
         }
 
-        private static TabTargetType IdentifyType(UnityEngine.Object target)
+        private static BetterTabTargetType IdentifyType(UnityEngine.Object target)
         {
             switch (target)
             {
                 case Component:
-                    return TabTargetType.Component;
+                    return BetterTabTargetType.Component;
                 
                 case GameObject when AssetDatabase.Contains(target):
-                    return TabTargetType.Asset;
+                    return BetterTabTargetType.Asset;
                 
                 case GameObject:
-                    return TabTargetType.GameObject;
+                    return BetterTabTargetType.GameObject;
                 
                 case DefaultAsset:
                 {
                     var path = AssetDatabase.GetAssetPath(target);
-                    if (AssetDatabase.IsValidFolder(path)) return TabTargetType.Folder;
+                    if (AssetDatabase.IsValidFolder(path)) return BetterTabTargetType.Folder;
                     
                     break;
                 }
             }
 
-            return AssetDatabase.Contains(target) ? TabTargetType.Asset : TabTargetType.None;
+            return AssetDatabase.Contains(target) ? BetterTabTargetType.Asset : BetterTabTargetType.None;
         }
     }
 }

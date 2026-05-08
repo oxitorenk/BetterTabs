@@ -1,6 +1,6 @@
 {
-    "name": "EditorTabs.Editor",
-    "rootNamespace": "EditorTabs.Editor",
+    "name": "BetterTabs.Editor",
+    "rootNamespace": "BetterTabs.Editor",
     "references": [],
     "includePlatforms": [
         "Editor"
