@@ -1,205 +1,144 @@
+using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
-using UnityEngine;
-using System;
-using System.Reflection;
 using UnityEngine.UIElements;
+using Object = UnityEngine.Object;
 
 namespace BetterTabs.Editor
 {
     [InitializeOnLoad]
     public static class BetterTabManager
     {
-        private static Type _dockAreaType;
-        private static PropertyInfo _screenPosProp;
-        private static MethodInfo _addTabMethod;
-        private static bool _isHookActive;
-        
-        private const float MouseYThreshold = 35f;
+        // Matches Unity's internal DockArea.kDockHeight, the native tab drop zone height.
+        private const float DockTabDropZoneHeight = 39f;
+        private const double FolderTabRestoreScanIntervalSeconds = 1d;
+
+        private static bool _areDragHooksRegistered;
+        private static double _nextFolderRestoreScan;
 
         static BetterTabManager()
         {
-            InitializeReflection();
-            HookGlobalEvent();
+            var editorAssembly = typeof(EditorWindow).Assembly;
+            UnityDocking.Initialize(editorAssembly);
+            FolderTabs.Initialize(editorAssembly);
+            InspectorTabs.Initialize(editorAssembly);
+
+            EditorApplication.update -= Update;
+            EditorApplication.update += Update;
+
+            EditorApplication.projectChanged -= FolderTabs.Refresh;
+            EditorApplication.projectChanged += FolderTabs.Refresh;
+
+            // delayCall clears its callbacks before invoking them, so no unsubscribe is needed.
+            EditorApplication.delayCall += FolderTabs.Refresh;
         }
 
-        private static void InitializeReflection()
+        private static void Update()
         {
-            _dockAreaType = typeof(EditorWindow).Assembly.GetType("UnityEditor.DockArea");
-            if (_dockAreaType != null)
+            // ProjectBrowser may overwrite restored folder-tab state after editor events, so keep it repaired.
+            if (EditorApplication.timeSinceStartup >= _nextFolderRestoreScan)
             {
-                // GUIView uses "screenPosition" which translates to absolute Editor rendering coordinates
-                _screenPosProp = _dockAreaType.GetProperty("screenPosition", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                               ?? _dockAreaType.GetProperty("position", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-
-                // AddTab(EditorWindow window, bool sendPaneEvents) or AddTab(EditorWindow window)
-                _addTabMethod = _dockAreaType.GetMethod("AddTab", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(EditorWindow), typeof(bool) }, null)
-                              ?? _dockAreaType.GetMethod("AddTab", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new[] { typeof(EditorWindow) }, null);
-
-                if (_screenPosProp == null) Debug.LogError("[BetterTabs] Failed to find DockArea position property.");
-                if (_addTabMethod == null) Debug.LogError("[BetterTabs] Failed to find DockArea AddTab method.");
+                _nextFolderRestoreScan = EditorApplication.timeSinceStartup + FolderTabRestoreScanIntervalSeconds;
+                FolderTabs.Refresh();
             }
-            else
-            {
-                Debug.LogError("[BetterTabs] Failed to find DockArea type.");
-            }
+
+            if (!UnityDocking.IsSupported) return;
+
+            var isDragging = HasSupportedTargets();
+            if (isDragging == _areDragHooksRegistered) return;
+
+            ToggleDragHooks(isDragging);
         }
 
-        private static void HookGlobalEvent()
+        private static bool HasSupportedTargets()
         {
-            EditorApplication.update -= RefreshDockEventHandlers;
-            EditorApplication.update += RefreshDockEventHandlers;
+            var targets = DragAndDrop.objectReferences;
+            return targets != null && targets.Any(IsSupported);
         }
 
-        private static void RefreshDockEventHandlers()
+        private static bool IsSupported(Object target)
         {
-            if (_dockAreaType == null) return;
+            if (target == null) return false;
 
-            var isDragging = DragAndDrop.objectReferences != null && DragAndDrop.objectReferences.Length > 0;
+            return IsFolder(target) ? FolderTabs.IsSupported : InspectorTabs.IsSupported;
+        }
+
+        private static bool IsFolder(Object target)
+        {
+            var path = AssetDatabase.GetAssetPath(target);
             
-            if (isDragging && !_isHookActive)
-            {
-                _isHookActive = true;
-                ToggleDragHooks(true);
-            }
-            else if (!isDragging && _isHookActive)
-            {
-                _isHookActive = false;
-                ToggleDragHooks(false);
-            }
+            return !string.IsNullOrEmpty(path) && AssetDatabase.IsValidFolder(path);
         }
 
         private static void ToggleDragHooks(bool shouldAddHooks)
         {
-            var allDocks = Resources.FindObjectsOfTypeAll(_dockAreaType);
-            foreach (var dock in allDocks)
+            foreach (var root in UnityDocking.GetRoots())
             {
-                var dockScriptableObject = dock as ScriptableObject;
-                if (dockScriptableObject == null) continue;
-
-                var visualTreeProp = dockScriptableObject.GetType().GetProperty("visualTree", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) 
-                                     ?? dockScriptableObject.GetType().GetProperty("rootVisualElement", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                
-                if (visualTreeProp == null) continue;
-                if (visualTreeProp.GetValue(dockScriptableObject) is not VisualElement root) continue;
-                
-                // Clean up previous registrations
                 root.UnregisterCallback<DragUpdatedEvent>(OnDragUpdated);
                 root.UnregisterCallback<DragPerformEvent>(OnDragPerform);
 
                 if (!shouldAddHooks) continue;
-                
+
                 root.RegisterCallback<DragUpdatedEvent>(OnDragUpdated);
                 root.RegisterCallback<DragPerformEvent>(OnDragPerform);
             }
+
+            _areDragHooksRegistered = shouldAddHooks;
         }
 
-        private static void OnDragUpdated(DragUpdatedEvent dragUpdateEvent)
+        private static void OnDragUpdated(DragUpdatedEvent dragUpdatedEvent)
         {
-            if (DragAndDrop.objectReferences == null || DragAndDrop.objectReferences.Length == 0) return;
-            
-            var targetObject = DragAndDrop.objectReferences[0];
-            var targetType = IdentifyType(targetObject);
-            if (targetType == BetterTabTargetType.None) return;
+            if (!IsTabDropCandidate(dragUpdatedEvent.localMousePosition.y)) return;
+            if (dragUpdatedEvent.currentTarget is not VisualElement) return;
 
-            if (dragUpdateEvent.currentTarget is not VisualElement) return;
-            if (dragUpdateEvent.localMousePosition.y >= MouseYThreshold) return;
-           
             DragAndDrop.visualMode = DragAndDropVisualMode.Link;
-            dragUpdateEvent.StopPropagation(); // Stop native rejection
+
+            // Prevents Unity's native handler from replacing our accepted-drop feedback.
+            dragUpdatedEvent.StopPropagation();
         }
 
         private static void OnDragPerform(DragPerformEvent dragPerformEvent)
         {
-            if (dragPerformEvent.localMousePosition.y > MouseYThreshold) return; // Ignore drops strictly inside the window content
-            if (DragAndDrop.objectReferences == null || DragAndDrop.objectReferences.Length == 0) return;
-            
-            var targetObject = DragAndDrop.objectReferences[0];
-            var targetType = IdentifyType(targetObject);
-            if (targetType == BetterTabTargetType.None) return;
+            if (!IsTabDropCandidate(dragPerformEvent.localMousePosition.y)) return;
 
-            var targetElement = dragPerformEvent.currentTarget as VisualElement;
-            var dockArea = GetDockAreaFromVisualElement(targetElement);
+            var dockArea = UnityDocking.FindDockArea(dragPerformEvent.currentTarget as VisualElement);
             if (dockArea == null) return;
-            
+
             DragAndDrop.AcceptDrag();
-            PerformDrop(dockArea, targetObject, targetType);
+            CreateNativeTabs(dockArea, DragAndDrop.objectReferences);
+
+            // Prevents Unity's native drop handler from processing the same drop again.
             dragPerformEvent.StopPropagation();
         }
 
-        private static object GetDockAreaFromVisualElement(VisualElement element)
+        private static bool IsTabDropCandidate(float mouseY)
         {
-            if (element == null || _dockAreaType == null) return null;
-            
-            var allDocks = Resources.FindObjectsOfTypeAll(_dockAreaType);
-            foreach (var dock in allDocks)
-            {
-                var dockScriptableObject = dock as ScriptableObject;
-                if (dockScriptableObject == null) continue;
-
-                var visualTreeProp = dockScriptableObject.GetType().GetProperty("visualTree", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) 
-                                     ?? dockScriptableObject.GetType().GetProperty("rootVisualElement", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
-                if (visualTreeProp == null) continue;
-                if (visualTreeProp.GetValue(dockScriptableObject) is not VisualElement root) continue;
-                if (root != element && !root.Contains(element)) continue;
-                
-                return dock;
-            }
-            
-            return null;
+            return mouseY < DockTabDropZoneHeight && HasSupportedTargets();
         }
 
-        private static void PerformDrop(object dockArea, UnityEngine.Object targetObject, BetterTabTargetType targetType)
+        private static void CreateNativeTabs(object dockArea, Object[] targets)
         {
-            var windowId = Guid.NewGuid().ToString();
+            EditorWindow firstWindow = null;
 
-            // Register in the persistent singleton BEFORE creating the instance so OnEnable can find it
-            BetterTabStateRegistry.Instance.RegisterTab(windowId, targetObject, targetType);
+            foreach (var target in GetDistinctSupportedTargets(targets))
+            {
+                var window = IsFolder(target) ? FolderTabs.Create(dockArea, target) : InspectorTabs.Create(dockArea, target);
+                firstWindow ??= window;
+            }
 
-            var window = ScriptableObject.CreateInstance<BetterTabsWindow>();
-            window.Initialize(windowId);
-            if (_addTabMethod != null && dockArea != null)
-            {
-                if (_addTabMethod.GetParameters().Length == 2)
-                {
-                    _addTabMethod.Invoke(dockArea, new object[] { window, true });
-                }
-                else
-                {
-                    _addTabMethod.Invoke(dockArea, new object[] { window });
-                }
-            }
-            else
-            {
-                window.Show(); // Fallback 
-            }
-            
-            // Give it immediate focus 
-            window.Focus();
+            firstWindow?.Focus();
         }
 
-        private static BetterTabTargetType IdentifyType(UnityEngine.Object target)
+        internal static IEnumerable<Object> GetDistinctSupportedTargets(Object[] targets)
         {
-            switch (target)
-            {
-                case Component:
-                    return BetterTabTargetType.Component;
-                
-                case GameObject when AssetDatabase.Contains(target):
-                    return BetterTabTargetType.Asset;
-                
-                case GameObject:
-                    return BetterTabTargetType.GameObject;
-                
-                case DefaultAsset:
-                {
-                    var path = AssetDatabase.GetAssetPath(target);
-                    if (AssetDatabase.IsValidFolder(path)) return BetterTabTargetType.Folder;
-                    
-                    break;
-                }
-            }
+            if (targets == null) yield break;
 
-            return AssetDatabase.Contains(target) ? BetterTabTargetType.Asset : BetterTabTargetType.None;
+            var seenInstanceIds = new HashSet<int>();
+            foreach (var target in targets)
+            {
+                // Returns only supported targets whose instance ID has not appeared before.
+                if (IsSupported(target) && seenInstanceIds.Add(target.GetInstanceID())) yield return target;
+            }
         }
     }
 }

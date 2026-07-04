@@ -1,9 +1,15 @@
 {
   "name": "com.oxitorenk.bettertabs",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "displayName": "Better Tabs",
   "description": "Drag any folder, asset, GameObject, or component onto a Unity tab bar to open it as a pinned tab.",
   "unity": "6000.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxitorenk/BetterTabs.git"
+  },
+  "changelogUrl": "https://github.com/oxitorenk/BetterTabs/blob/main/CHANGELOG.md",
   "author": {
     "name": "Oxitorenk"
   },
