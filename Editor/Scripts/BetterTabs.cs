@@ -7,7 +7,7 @@ using Object = UnityEngine.Object;
 namespace BetterTabs.Editor
 {
     [InitializeOnLoad]
-    public static class BetterTabManager
+    internal static class BetterTabs
     {
         // Matches Unity's internal DockArea.kDockHeight, the native tab drop zone height.
         private const float DockTabDropZoneHeight = 39f;
@@ -16,17 +16,15 @@ namespace BetterTabs.Editor
         private static bool _areDragHooksRegistered;
         private static double _nextFolderRestoreScan;
 
-        static BetterTabManager()
+        static BetterTabs()
         {
             var editorAssembly = typeof(EditorWindow).Assembly;
             UnityDocking.Initialize(editorAssembly);
             FolderTabs.Initialize(editorAssembly);
             InspectorTabs.Initialize(editorAssembly);
 
-            EditorApplication.update -= Update;
             EditorApplication.update += Update;
 
-            EditorApplication.projectChanged -= FolderTabs.Refresh;
             EditorApplication.projectChanged += FolderTabs.Refresh;
 
             // delayCall clears its callbacks before invoking them, so no unsubscribe is needed.
@@ -89,7 +87,6 @@ namespace BetterTabs.Editor
         private static void OnDragUpdated(DragUpdatedEvent dragUpdatedEvent)
         {
             if (!IsTabDropCandidate(dragUpdatedEvent.localMousePosition.y)) return;
-            if (dragUpdatedEvent.currentTarget is not VisualElement) return;
 
             DragAndDrop.visualMode = DragAndDropVisualMode.Link;
 

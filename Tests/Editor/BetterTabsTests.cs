@@ -9,10 +9,11 @@ using Object = UnityEngine.Object;
 
 namespace BetterTabs.Editor.Tests
 {
-    public class BetterTabManagerTests
+    public class BetterTabsTests
     {
         private const string TestFolderPath = "Assets/BetterTabsTests";
         private const string MovedTestFolderPath = "Assets/BetterTabsTestsMoved";
+        
         private const BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         private const BindingFlags StaticFlags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
 
@@ -28,11 +29,11 @@ namespace BetterTabs.Editor.Tests
             DeleteTestFolders();
         }
 
-        [Test]
-        public void DockAreaApiMatchesSupportedContract()
+        
+        [Test] // Ensures Unity's internal DockArea API still supports finding dock roots and adding native tabs.
+        public void DockAreaApiIsAvailable()
         {
             var dockAreaType = GetEditorType("UnityEditor.DockArea");
-
             var rootProperty = dockAreaType.GetProperty("visualTree", InstanceFlags);
             var addTabMethod = dockAreaType.GetMethod("AddTab", InstanceFlags, 
                 null, new[] { typeof(EditorWindow), typeof(bool) }, null);
@@ -41,11 +42,11 @@ namespace BetterTabs.Editor.Tests
             Assert.NotNull(addTabMethod, "DockArea.AddTab was not found.");
         }
 
-        [Test]
-        public void ProjectBrowserApiMatchesSupportedContract()
+        [Test] // Ensures Unity's internal ProjectBrowser API still supports opening, locking, and displaying folders.
+        public void ProjectBrowserApiIsAvailable()
         {
             var projectBrowserType = GetEditorType("UnityEditor.ProjectBrowser");
-
+            
             Assert.NotNull(projectBrowserType.GetMethod("Init", InstanceFlags, null,
                 Type.EmptyTypes, null));
             
@@ -69,8 +70,8 @@ namespace BetterTabs.Editor.Tests
                 $"Unsupported folder ID type: {parameters[0].ParameterType.FullName}");
         }
 
-        [Test]
-        public void InspectorWindowApiMatchesSupportedContract()
+        [Test] // Ensures Unity's internal InspectorWindow API still supports locking objects and refreshing tab titles.
+        public void InspectorWindowApiIsAvailable()
         {
             var inspectorWindowType = GetEditorType("UnityEditor.InspectorWindow");
 
@@ -81,19 +82,20 @@ namespace BetterTabs.Editor.Tests
             Assert.NotNull(inspectorWindowType.GetProperty("isLocked", InstanceFlags));
         }
 
-        [Test]
-        public void DistinctSupportedTargetsPreserveSourceOrderAndExactObjects()
+        [Test] // Ensures nulls and duplicates are removed without changing the remaining objects or their order.
+        public void NullAndDuplicateTargetsAreFiltered()
         {
             var gameObject = new GameObject("BetterTabs Test GameObject");
             var component = gameObject.AddComponent<BoxCollider>();
             var asset = ScriptableObject.CreateInstance<TestAsset>();
+            
             CreateTestFolder(TestFolderPath);
             var folder = AssetDatabase.LoadMainAssetAtPath(TestFolderPath);
 
             try
             {
                 var input = new[] { component, folder, null, gameObject, component, asset, folder };
-                var result = new List<Object>(BetterTabManager.GetDistinctSupportedTargets(input));
+                var result = new List<Object>(BetterTabs.GetDistinctSupportedTargets(input));
 
                 CollectionAssert.AreEqual(new[] { component, folder, gameObject, asset }, result);
             }
@@ -104,18 +106,21 @@ namespace BetterTabs.Editor.Tests
             }
         }
 
-        [Test]
-        public void FolderIdAdapterProducesExpectedProjectBrowserParameter()
+        [Test] // Ensures folder IDs use the type and value expected by ProjectBrowser.ShowFolderContents.
+        public void FolderIdIsCompatible()
         {
             CreateTestFolder(TestFolderPath);
             var folder = AssetDatabase.LoadMainAssetAtPath(TestFolderPath);
+            
             Assert.NotNull(folder);
 
             var projectBrowserType = GetEditorType("UnityEditor.ProjectBrowser");
             var showFolderContents = projectBrowserType.GetMethod("ShowFolderContents", 
                 InstanceFlags);
+
+            Assert.NotNull(showFolderContents);
             
-            var expectedType = showFolderContents.GetParameters()[0].ParameterType;
+            var expectedType = showFolderContents!.GetParameters()[0].ParameterType;
             var folderId = FolderTabs.CreateFolderId(folder);
 
             Assert.AreEqual(expectedType, folderId.GetType());
@@ -146,6 +151,7 @@ namespace BetterTabs.Editor.Tests
         private static Type GetEditorType(string name)
         {
             var type = typeof(EditorWindow).Assembly.GetType(name);
+            
             Assert.NotNull(type, $"{name} was not found.");
             return type;
         }
@@ -154,17 +160,26 @@ namespace BetterTabs.Editor.Tests
         {
             var folderName = path["Assets/".Length..];
             var guid = AssetDatabase.CreateFolder("Assets", folderName);
+            
             Assert.IsFalse(string.IsNullOrEmpty(guid), $"Could not create {path}.");
         }
 
         private static void DeleteTestFolders()
         {
-            if (AssetDatabase.IsValidFolder(TestFolderPath)) AssetDatabase.DeleteAsset(TestFolderPath);
-            if (AssetDatabase.IsValidFolder(MovedTestFolderPath)) AssetDatabase.DeleteAsset(MovedTestFolderPath);
+            if (AssetDatabase.IsValidFolder(TestFolderPath))
+            {
+                AssetDatabase.DeleteAsset(TestFolderPath);
+            }
+            
+            if (AssetDatabase.IsValidFolder(MovedTestFolderPath))
+            {
+                AssetDatabase.DeleteAsset(MovedTestFolderPath);
+            }
         }
 
         private sealed class TestAsset : ScriptableObject
         {
+            // NO-OP
         }
     }
 }
