@@ -11,7 +11,6 @@ namespace BetterTabs.Editor
     {
         private const string MarkerPrefix = "BetterTabs.Folder:";
         private const string GuidPrefix = "guid:";
-        private const string PathPrefix = "path:";
 
         private const BindingFlags InstanceFlags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
         private const BindingFlags StaticFlags = BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
@@ -163,7 +162,7 @@ namespace BetterTabs.Editor
         internal static string CreateFolderMarker(string path)
         {
             var guid = AssetDatabase.AssetPathToGUID(path);
-            return MarkerPrefix + (string.IsNullOrEmpty(guid) ? PathPrefix + path : GuidPrefix + guid);
+            return MarkerPrefix + GuidPrefix + guid;
         }
 
         internal static bool TryResolveFolder(string marker, out Object folder)
@@ -172,20 +171,9 @@ namespace BetterTabs.Editor
             if (string.IsNullOrEmpty(marker) || !marker.StartsWith(MarkerPrefix, StringComparison.Ordinal)) return false;
 
             var payload = marker[MarkerPrefix.Length..];
-            string path;
+            if (!payload.StartsWith(GuidPrefix, StringComparison.Ordinal)) return false;
 
-            if (payload.StartsWith(GuidPrefix, StringComparison.Ordinal))
-            {
-                path = AssetDatabase.GUIDToAssetPath(payload.Substring(GuidPrefix.Length));
-            }
-            else if (payload.StartsWith(PathPrefix, StringComparison.Ordinal))
-            {
-                path = payload[PathPrefix.Length..];
-            }
-            else
-            {
-                return false;
-            }
+            var path = AssetDatabase.GUIDToAssetPath(payload.Substring(GuidPrefix.Length));
 
             if (string.IsNullOrEmpty(path) || !AssetDatabase.IsValidFolder(path)) return false;
             
