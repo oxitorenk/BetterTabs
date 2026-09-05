@@ -7,7 +7,7 @@ using Object = UnityEngine.Object;
 namespace BetterTabs.Editor
 {
     [InitializeOnLoad]
-    public static class BetterTabManager
+    public static class BetterTabs
     {
         // Matches Unity's internal DockArea.kDockHeight, the native tab drop zone height.
         private const float DockTabDropZoneHeight = 39f;
@@ -16,7 +16,7 @@ namespace BetterTabs.Editor
         private static bool _areDragHooksRegistered;
         private static double _nextFolderRestoreScan;
 
-        static BetterTabManager()
+        static BetterTabs()
         {
             var editorAssembly = typeof(EditorWindow).Assembly;
             UnityDocking.Initialize(editorAssembly);
