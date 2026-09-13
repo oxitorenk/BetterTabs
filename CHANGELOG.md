@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.0.1] - 2026-09-05
+
+### Changed
+
+- Renamed the internal tab manager for consistency.
+- Simplified drag-and-drop hook registration.
+- Removed redundant folder marker fallback logic.
+- Improved editor test names and documentation.
+- Updated package and copyright metadata.
+
 ## [2.0.0] - 2026-07-04
 
 ### Added
